@@ -644,45 +644,49 @@ class HistoryActivity : AppCompatActivity() {
 
                 lifecycleScope.launch(Dispatchers.IO) {
 
-                    // 1. Instant local bulk update
-                    val ids =
-                        items.map {
-                            it.id
-                        }
-
-                    db.scanDao()
-                        .softDeleteList(ids)
-
-                    // 2. Refresh UI immediately
-                    withContext(Dispatchers.Main) {
-
-                        Toast.makeText(
-                            this@HistoryActivity,
-                            "${items.size} item(s) moved to Bin",
-                            Toast.LENGTH_SHORT
-                        ).show()
-
-                        loadActiveScans()
-                    }
-
-                    // 3. Background cloud soft delete
-                    //
-                    // IMPORTANT:
-                    // Identify the EXACT scan using:
-                    // deviceId + barcode + rackNo + date + time
-                    //
-                    // This prevents another device's matching
-                    // scan from being deleted accidentally.
+                    // Confirm cloud soft-delete FIRST.
+                    // Only then mark the local Room record as deleted.
+                    val successfulItems = mutableListOf<ScanItem>()
+                    val failedItems = mutableListOf<ScanItem>()
 
                     items.forEach { item ->
 
-                        SyncManager.softDeleteScanFromCloud(
-                            item.deviceId,
-                            item.barcode,
-                            item.rackNo,
-                            item.date,
-                            item.time
+                        val result =
+                            SyncManager.softDeleteScanFromCloud(
+                                item.deviceId,
+                                item.barcode,
+                                item.rackNo,
+                                item.date,
+                                item.time
+                            )
+
+                        if (result.success) successfulItems.add(item)
+                        else failedItems.add(item)
+                    }
+
+                    // Mark local isDeleted=true ONLY for cloud-confirmed records.
+                    if (successfulItems.isNotEmpty()) {
+                        db.scanDao().softDeleteList(
+                            successfulItems.map { it.id }
                         )
+                    }
+
+                    withContext(Dispatchers.Main) {
+
+                        val message =
+                            if (failedItems.isEmpty()) {
+                                "${successfulItems.size} item(s) moved to Bin"
+                            } else {
+                                "${successfulItems.size} moved to Bin, ${failedItems.size} cloud update(s) failed. Failed item(s) remain in History."
+                            }
+
+                        Toast.makeText(
+                            this@HistoryActivity,
+                            message,
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        loadActiveScans()
                     }
                 }
             }
@@ -716,35 +720,48 @@ class HistoryActivity : AppCompatActivity() {
                             it.id
                         }
 
-                    // 1. Instant local bulk update
-                    db.scanDao()
-                        .softDeleteList(ids)
-
-                    // 2. Refresh UI immediately
-                    withContext(Dispatchers.Main) {
-
-                        Toast.makeText(
-                            this@HistoryActivity,
-                            "All records moved to Recycle Bin",
-                            Toast.LENGTH_SHORT
-                        ).show()
-
-                        loadActiveScans()
-                    }
-
-                    // 3. Background cloud soft delete
-                    //
-                    // Use the exact scan identity for every item.
+                    // Confirm cloud soft-delete FIRST.
+                    // Only then mark local Room records as deleted.
+                    val successfulItems = mutableListOf<ScanItem>()
+                    val failedItems = mutableListOf<ScanItem>()
 
                     itemsToProcess.forEach { item ->
 
-                        SyncManager.softDeleteScanFromCloud(
-                            item.deviceId,
-                            item.barcode,
-                            item.rackNo,
-                            item.date,
-                            item.time
+                        val result =
+                            SyncManager.softDeleteScanFromCloud(
+                                item.deviceId,
+                                item.barcode,
+                                item.rackNo,
+                                item.date,
+                                item.time
+                            )
+
+                        if (result.success) successfulItems.add(item)
+                        else failedItems.add(item)
+                    }
+
+                    if (successfulItems.isNotEmpty()) {
+                        db.scanDao().softDeleteList(
+                            successfulItems.map { it.id }
                         )
+                    }
+
+                    withContext(Dispatchers.Main) {
+
+                        val message =
+                            if (failedItems.isEmpty()) {
+                                "All ${successfulItems.size} records moved to Recycle Bin"
+                            } else {
+                                "${successfulItems.size} moved to Bin, ${failedItems.size} cloud update(s) failed. Failed item(s) remain in History."
+                            }
+
+                        Toast.makeText(
+                            this@HistoryActivity,
+                            message,
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        loadActiveScans()
                     }
                 }
             }
