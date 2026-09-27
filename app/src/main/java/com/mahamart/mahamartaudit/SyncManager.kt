@@ -196,89 +196,79 @@ object SyncManager {
     // SOFT DELETE EXACT SCAN IN SUPABASE
     // ============================================================
 
+    data class SoftDeleteResult(
+        val success: Boolean,
+        val statusCode: Int,
+        val responseBody: String
+    )
+
     suspend fun softDeleteScanFromCloud(
         deviceId: String,
         barcode: String,
         rackNo: String,
         date: String,
         time: String
-    ) {
-        withContext(Dispatchers.IO) {
-
+    ): SoftDeleteResult {
+        return withContext(Dispatchers.IO) {
             try {
-
                 val updatePayload = JSONObject().apply {
                     put("is_deleted", true)
                 }
 
-                val encodedDeviceId =
-                    encodeUrlParam(deviceId)
-
-                val encodedBarcode =
-                    encodeUrlParam(barcode)
-
-                val encodedRackNo =
-                    encodeUrlParam(rackNo)
-
-                val encodedDate =
-                    encodeUrlParam(date)
-
-                val encodedTime =
-                    encodeUrlParam(time)
-
                 val url = URL(
                     "$SUPABASE_URL/rest/v1/scans" +
-                            "?device_id=eq.$encodedDeviceId" +
-                            "&barcode=eq.$encodedBarcode" +
-                            "&rack_no=eq.$encodedRackNo" +
-                            "&date=eq.$encodedDate" +
-                            "&time=eq.$encodedTime"
+                            "?device_id=eq.${encodeUrlParam(deviceId)}" +
+                            "&barcode=eq.${encodeUrlParam(barcode)}" +
+                            "&rack_no=eq.${encodeUrlParam(rackNo)}" +
+                            "&date=eq.${encodeUrlParam(date)}" +
+                            "&time=eq.${encodeUrlParam(time)}"
                 )
 
                 val connection =
                     (url.openConnection() as HttpURLConnection).apply {
-
                         requestMethod = "PATCH"
-
-                        setRequestProperty(
-                            "apikey",
-                            SUPABASE_KEY
-                        )
-
-                        setRequestProperty(
-                            "Authorization",
-                            "Bearer $SUPABASE_KEY"
-                        )
-
-                        setRequestProperty(
-                            "Content-Type",
-                            "application/json"
-                        )
-
-                        setRequestProperty(
-                            "Prefer",
-                            "return=minimal"
-                        )
-
+                        setRequestProperty("apikey", SUPABASE_KEY)
+                        setRequestProperty("Authorization", "Bearer $SUPABASE_KEY")
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("Prefer", "return=representation")
                         doOutput = true
                     }
 
-                val writer =
-                    OutputStreamWriter(connection.outputStream)
+                OutputStreamWriter(connection.outputStream).use { writer ->
+                    writer.write(updatePayload.toString())
+                    writer.flush()
+                }
 
-                writer.write(updatePayload.toString())
-                writer.flush()
-                writer.close()
+                val responseCode = connection.responseCode
+                val stream =
+                    if (responseCode in 200..299) connection.inputStream
+                    else connection.errorStream
 
-                connection.responseCode
+                val responseBody =
+                    stream?.bufferedReader()?.use { it.readText() } ?: ""
+
                 connection.disconnect()
+
+                val updatedCount =
+                    try { JSONArray(responseBody).length() } catch (_: Exception) { 0 }
+
+                val success = responseCode in 200..299 && updatedCount == 1
+
+                if (!success) {
+                    android.util.Log.e(
+                        "SyncManager",
+                        "Cloud soft-delete failed: status=$responseCode, updatedCount=$updatedCount, barcode=$barcode, device=$deviceId, rack=$rackNo, date=$date, time=$time, body=$responseBody"
+                    )
+                }
+
+                SoftDeleteResult(success, responseCode, responseBody)
 
             } catch (e: Exception) {
                 e.printStackTrace()
+                SoftDeleteResult(false, -1, e.localizedMessage ?: "Unknown error")
             }
         }
     }
-
 
     // ============================================================
     // RESTORE EXACT SCAN IN SUPABASE
