@@ -1586,14 +1586,32 @@ class MainActivity : AppCompatActivity() {
             Dispatchers.IO
         ) {
 
+            val myDeviceId =
+                getSharedPreferences(
+                    "AuditPrefs",
+                    Context.MODE_PRIVATE
+                )
+                    .getString("DEVICE_ID", "DEV01")
+                    ?.trim()
+                    .takeUnless {
+                        it.isNullOrEmpty()
+                    }
+                    ?: "DEV01"
+
             val recents =
                 db.scanDao()
                     .getAllActiveScans()
+                    .filter {
+                        it.deviceId.equals(
+                            myDeviceId,
+                            ignoreCase = true
+                        )
+                    }
                     .sortedWith(
                         compareByDescending<ScanItem> {
-                            it.date
+                            scanDateTimeMillis(it)
                         }.thenByDescending {
-                            it.time
+                            it.id
                         }
                     )
                     .take(5)
