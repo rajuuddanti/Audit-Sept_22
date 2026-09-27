@@ -372,31 +372,28 @@ object SyncManager {
     // HARD DELETE EXACT SCAN FROM SUPABASE
     // ============================================================
 
+    data class HardDeleteResult(
+        val success: Boolean,
+        val statusCode: Int,
+        val responseBody: String
+    )
+
     suspend fun hardDeleteScanFromCloud(
         deviceId: String,
         barcode: String,
         rackNo: String,
         date: String,
         time: String
-    ) {
-        withContext(Dispatchers.IO) {
+    ): HardDeleteResult {
+        return withContext(Dispatchers.IO) {
 
             try {
 
-                val encodedDeviceId =
-                    encodeUrlParam(deviceId)
-
-                val encodedBarcode =
-                    encodeUrlParam(barcode)
-
-                val encodedRackNo =
-                    encodeUrlParam(rackNo)
-
-                val encodedDate =
-                    encodeUrlParam(date)
-
-                val encodedTime =
-                    encodeUrlParam(time)
+                val encodedDeviceId = encodeUrlParam(deviceId)
+                val encodedBarcode = encodeUrlParam(barcode)
+                val encodedRackNo = encodeUrlParam(rackNo)
+                val encodedDate = encodeUrlParam(date)
+                val encodedTime = encodeUrlParam(time)
 
                 val url = URL(
                     "$SUPABASE_URL/rest/v1/scans" +
@@ -409,25 +406,58 @@ object SyncManager {
 
                 val connection =
                     (url.openConnection() as HttpURLConnection).apply {
-
                         requestMethod = "DELETE"
-
-                        setRequestProperty(
-                            "apikey",
-                            SUPABASE_KEY
-                        )
-
-                        setRequestProperty(
-                            "Authorization",
-                            "Bearer $SUPABASE_KEY"
-                        )
+                        setRequestProperty("apikey", SUPABASE_KEY)
+                        setRequestProperty("Authorization", "Bearer $SUPABASE_KEY")
+                        setRequestProperty("Prefer", "return=representation")
                     }
 
-                connection.responseCode
+                val responseCode = connection.responseCode
+
+                val stream =
+                    if (responseCode in 200..299) {
+                        connection.inputStream
+                    } else {
+                        connection.errorStream
+                    }
+
+                val responseBody =
+                    stream?.bufferedReader()?.use { it.readText() } ?: ""
+
                 connection.disconnect()
 
+                val deletedCount =
+                    try {
+                        JSONArray(responseBody).length()
+                    } catch (_: Exception) {
+                        0
+                    }
+
+                val success =
+                    responseCode in 200..299 && deletedCount == 1
+
+                if (!success) {
+                    android.util.Log.e(
+                        "SyncManager",
+                        "Cloud delete failed: status=$responseCode, deletedCount=$deletedCount, barcode=$barcode, device=$deviceId, rack=$rackNo, date=$date, time=$time, body=$responseBody"
+                    )
+                }
+
+                HardDeleteResult(
+                    success = success,
+                    statusCode = responseCode,
+                    responseBody = responseBody
+                )
+
             } catch (e: Exception) {
+
                 e.printStackTrace()
+
+                HardDeleteResult(
+                    success = false,
+                    statusCode = -1,
+                    responseBody = e.localizedMessage ?: "Unknown error"
+                )
             }
         }
     }
