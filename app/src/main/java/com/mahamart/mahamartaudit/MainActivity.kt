@@ -1609,7 +1609,18 @@ class MainActivity : AppCompatActivity() {
                     }
                     .sortedWith(
                         compareByDescending<ScanItem> {
-                            scanDateTimeMillis(it)
+                            try {
+                                SimpleDateFormat(
+                                    "yyyy-MM-dd hh:mm:ss a",
+                                    Locale.getDefault()
+                                ).parse(
+                                    it.date + " " + it.time
+                                )?.time ?: 0L
+                            } catch (
+                                e: Exception
+                            ) {
+                                0L
+                            }
                         }.thenByDescending {
                             it.id
                         }
