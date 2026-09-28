@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MAHAMART AUDIT_Test"
+rootProject.name = "MAHAMART AUDIT_V8"
 include(":app")
