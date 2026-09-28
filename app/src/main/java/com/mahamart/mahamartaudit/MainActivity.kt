@@ -223,6 +223,10 @@ class MainActivity : AppCompatActivity() {
             false
         }
 
+        etBarcode.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) refreshSkuPreviewFromBarcodeIfNeeded()
+        }
+
         // -----------------------------------------------------
         // QUANTITY FOCUS
         // -----------------------------------------------------
@@ -670,6 +674,7 @@ class MainActivity : AppCompatActivity() {
                 unlockScanInput()
 
                 etBarcode.requestFocus()
+                refreshSkuPreviewFromBarcodeIfNeeded()
             }
         }
 
@@ -1282,6 +1287,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------------------------------------------------------
+    // RESTORE ITEM NAME PREVIEW
+    // ---------------------------------------------------------
+
+    private fun refreshSkuPreviewFromBarcodeIfNeeded() {
+
+        val barcode =
+            etBarcode.text
+                .toString()
+                .trim()
+
+        if (
+            barcode.isNotEmpty() &&
+            tvSkuNamePreview?.text
+                ?.toString()
+                ?.trim()
+                .isNullOrEmpty()
+        ) {
+            lookupSkuName(barcode)
+        }
+    }
+
     // ITEM NAME PREVIEW
     // ---------------------------------------------------------
 
@@ -1453,6 +1479,8 @@ class MainActivity : AppCompatActivity() {
         updateDateTime()
 
         applySavedSettings()
+
+        refreshSkuPreviewFromBarcodeIfNeeded()
 
         loadRecentScans()
 
