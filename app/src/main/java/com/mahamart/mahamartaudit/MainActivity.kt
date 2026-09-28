@@ -306,6 +306,27 @@ class MainActivity : AppCompatActivity() {
                         return
                     }
 
+                    // Manual barcode entry must also resolve the item name
+                    // from master_skus. Wait briefly so we do not query
+                    // Room once for every character typed.
+                    tvSkuNamePreview?.text = ""
+
+                    lifecycleScope.launch {
+                        kotlinx.coroutines.delay(250L)
+
+                        val currentInput =
+                            etBarcode.text
+                                .toString()
+                                .trim()
+
+                        if (
+                            currentInput == input &&
+                            currentInput.isNotEmpty()
+                        ) {
+                            lookupSkuName(currentInput)
+                        }
+                    }
+
                     // Support scanner profiles that send CR/LF.
                     if (
                         s.toString().contains("\n") ||
