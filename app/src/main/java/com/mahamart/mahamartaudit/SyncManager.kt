@@ -252,7 +252,7 @@ object SyncManager {
                 val updatedCount =
                     try { JSONArray(responseBody).length() } catch (_: Exception) { 0 }
 
-                val success = responseCode in 200..299 && updatedCount == 1
+                val success = responseCode in 200..299
 
                 if (!success) {
                     android.util.Log.e(
@@ -423,8 +423,7 @@ object SyncManager {
                         0
                     }
 
-                val success =
-                    responseCode in 200..299 && deletedCount == 1
+                val success = responseCode in 200..299
 
                 if (!success) {
                     android.util.Log.e(
