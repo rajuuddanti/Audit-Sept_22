@@ -102,6 +102,20 @@ interface ScanDao {
     @Query("DELETE FROM scans WHERE id IN (:ids)")
     suspend fun hardDeleteList(ids: List<Long>)
 
+    // Android Room/SQLite can bind only a limited number of values to one
+    // IN(...) query. Keep large delete operations below that limit.
+    suspend fun softDeleteListChunked(ids: List<Long>) {
+        ids.chunked(500).forEach { chunk ->
+            if (chunk.isNotEmpty()) softDeleteList(chunk)
+        }
+    }
+
+    suspend fun hardDeleteListChunked(ids: List<Long>) {
+        ids.chunked(500).forEach { chunk ->
+            if (chunk.isNotEmpty()) hardDeleteList(chunk)
+        }
+    }
+
     // Sync operations for Supabase
     @Query("SELECT * FROM scans WHERE (isSynced = 0 OR isSynced IS NULL) AND isDeleted = 0")
     suspend fun getUnsyncedScans(): List<ScanItem>
