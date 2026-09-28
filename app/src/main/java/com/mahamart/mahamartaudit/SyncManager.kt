@@ -331,7 +331,7 @@ object SyncManager {
                 connection.disconnect()
 
                 if (lastCode in 200..299) return true
-                if (lastCode != 408 && lastCode != 429 && lastCode !in 500..599) break
+                if (lastCode != 408 && lastCode != 429 && lastCode !in 500..599) return false
             } catch (e: Exception) {
                 lastCode = -1
                 lastBody = e.localizedMessage ?: "Unknown error"
