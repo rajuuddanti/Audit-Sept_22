@@ -271,6 +271,107 @@ object SyncManager {
     }
 
     // ============================================================
+    // BATCH DELETE HELPERS
+    // ============================================================
+    //
+    // Large delete operations use exact composite identities in
+    // batches instead of one HTTP request per record.
+    // ============================================================
+
+    private const val DELETE_BATCH_SIZE = 25
+    private const val DELETE_MAX_RETRIES = 3
+
+    private fun buildCompositeOrFilter(items: List<ScanItem>): String {
+        return items.joinToString(",", prefix = "or=(", postfix = ")") { item ->
+            "and(" +
+                    "device_id.eq.${encodeUrlParam(item.deviceId)}," +
+                    "barcode.eq.${encodeUrlParam(item.barcode)}," +
+                    "rack_no.eq.${encodeUrlParam(item.rackNo)}," +
+                    "date.eq.${encodeUrlParam(item.date)}," +
+                    "time.eq.${encodeUrlParam(item.time)}" +
+                    ")"
+        }
+    }
+
+    private suspend fun executeBatchDeleteRequest(
+        items: List<ScanItem>,
+        method: String,
+        updatePayload: JSONObject? = null
+    ): Boolean {
+        var lastCode = -1
+        var lastBody = ""
+
+        repeat(DELETE_MAX_RETRIES) { attempt ->
+            try {
+                val url = URL(
+                    "$SUPABASE_URL/rest/v1/scans?${buildCompositeOrFilter(items)}"
+                )
+
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
+                    setRequestProperty("apikey", SUPABASE_KEY)
+                    setRequestProperty("Authorization", "Bearer $SUPABASE_KEY")
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Prefer", "return=minimal")
+                    if (updatePayload != null) doOutput = true
+                }
+
+                if (updatePayload != null) {
+                    OutputStreamWriter(connection.outputStream).use { writer ->
+                        writer.write(updatePayload.toString())
+                        writer.flush()
+                    }
+                }
+
+                lastCode = connection.responseCode
+                val stream = if (lastCode in 200..299) connection.inputStream else connection.errorStream
+                lastBody = stream?.bufferedReader()?.use { it.readText() } ?: ""
+                connection.disconnect()
+
+                if (lastCode in 200..299) return true
+                if (lastCode != 408 && lastCode != 429 && lastCode !in 500..599) break
+            } catch (e: Exception) {
+                lastCode = -1
+                lastBody = e.localizedMessage ?: "Unknown error"
+            }
+
+            if (attempt < DELETE_MAX_RETRIES - 1) {
+                kotlinx.coroutines.delay(500L * (attempt + 1))
+            }
+        }
+
+        android.util.Log.e(
+            "SyncManager",
+            "Batch $method failed: status=$lastCode, records=${items.size}, body=$lastBody"
+        )
+        return false
+    }
+
+    suspend fun softDeleteScansFromCloud(items: List<ScanItem>): List<ScanItem> {
+        if (items.isEmpty()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            val successfulItems = mutableListOf<ScanItem>()
+            val payload = JSONObject().apply { put("is_deleted", true) }
+            items.chunked(DELETE_BATCH_SIZE).forEach { batch ->
+                if (executeBatchDeleteRequest(batch, "PATCH", payload)) successfulItems.addAll(batch)
+            }
+            successfulItems
+        }
+    }
+
+    suspend fun hardDeleteScansFromCloud(items: List<ScanItem>): List<ScanItem> {
+        if (items.isEmpty()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            val successfulItems = mutableListOf<ScanItem>()
+            items.chunked(DELETE_BATCH_SIZE).forEach { batch ->
+                if (executeBatchDeleteRequest(batch, "DELETE")) successfulItems.addAll(batch)
+            }
+            successfulItems
+        }
+    }
+    // ============================================================
     // RESTORE EXACT SCAN IN SUPABASE
     // ============================================================
 
