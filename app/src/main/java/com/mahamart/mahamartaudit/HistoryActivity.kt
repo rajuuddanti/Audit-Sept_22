@@ -638,46 +638,32 @@ class HistoryActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Move Selected to Bin")
             .setMessage(
-                "Move ${items.size} selected item(s) to Recycle Bin?"
+                "Move \${items.size} selected item(s) to Recycle Bin?"
             )
             .setPositiveButton("Move Selected") { _, _ ->
 
                 lifecycleScope.launch(Dispatchers.IO) {
 
-                    // Confirm cloud soft-delete FIRST.
-                    // Only then mark the local Room record as deleted.
-                    val successfulItems = mutableListOf<ScanItem>()
-                    val failedItems = mutableListOf<ScanItem>()
+                    // Process the exact selected identities in cloud batches.
+                    val successfulItems =
+                        SyncManager.softDeleteScansFromCloud(items)
 
-                    items.forEach { item ->
-
-                        val result =
-                            SyncManager.softDeleteScanFromCloud(
-                                item.deviceId,
-                                item.barcode,
-                                item.rackNo,
-                                item.date,
-                                item.time
-                            )
-
-                        if (result.success) successfulItems.add(item)
-                        else failedItems.add(item)
-                    }
-
-                    // Mark local isDeleted=true ONLY for cloud-confirmed records.
                     if (successfulItems.isNotEmpty()) {
-                        db.scanDao().softDeleteList(
+                        db.scanDao().softDeleteListChunked(
                             successfulItems.map { it.id }
                         )
                     }
 
+                    val failedCount =
+                        items.size - successfulItems.size
+
                     withContext(Dispatchers.Main) {
 
                         val message =
-                            if (failedItems.isEmpty()) {
-                                "${successfulItems.size} item(s) moved to Bin"
+                            if (failedCount == 0) {
+                                "\${successfulItems.size} item(s) moved to Bin"
                             } else {
-                                "${successfulItems.size} moved to Bin, ${failedItems.size} cloud update(s) failed. Failed item(s) remain in History."
+                                "\${successfulItems.size} moved to Bin, \${failedCount} cloud update(s) failed. Failed item(s) remain in History."
                             }
 
                         Toast.makeText(
@@ -700,6 +686,9 @@ class HistoryActivity : AppCompatActivity() {
     // ============================================================
     // MOVE ALL TO BIN
     // ============================================================
+    // ============================================================
+    // MOVE ALL TO BIN
+    // ============================================================
 
     private fun confirmClearAllToBin() {
 
@@ -712,47 +701,27 @@ class HistoryActivity : AppCompatActivity() {
 
                 lifecycleScope.launch(Dispatchers.IO) {
 
-                    val itemsToProcess =
-                        scanList.toList()
+                    val itemsToProcess = scanList.toList()
 
-                    val ids =
-                        itemsToProcess.map {
-                            it.id
-                        }
-
-                    // Confirm cloud soft-delete FIRST.
-                    // Only then mark local Room records as deleted.
-                    val successfulItems = mutableListOf<ScanItem>()
-                    val failedItems = mutableListOf<ScanItem>()
-
-                    itemsToProcess.forEach { item ->
-
-                        val result =
-                            SyncManager.softDeleteScanFromCloud(
-                                item.deviceId,
-                                item.barcode,
-                                item.rackNo,
-                                item.date,
-                                item.time
-                            )
-
-                        if (result.success) successfulItems.add(item)
-                        else failedItems.add(item)
-                    }
+                    val successfulItems =
+                        SyncManager.softDeleteScansFromCloud(itemsToProcess)
 
                     if (successfulItems.isNotEmpty()) {
-                        db.scanDao().softDeleteList(
+                        db.scanDao().softDeleteListChunked(
                             successfulItems.map { it.id }
                         )
                     }
 
+                    val failedCount =
+                        itemsToProcess.size - successfulItems.size
+
                     withContext(Dispatchers.Main) {
 
                         val message =
-                            if (failedItems.isEmpty()) {
-                                "All ${successfulItems.size} records moved to Recycle Bin"
+                            if (failedCount == 0) {
+                                "All \${successfulItems.size} records moved to Recycle Bin"
                             } else {
-                                "${successfulItems.size} moved to Bin, ${failedItems.size} cloud update(s) failed. Failed item(s) remain in History."
+                                "\${successfulItems.size} moved to Bin, \${failedCount} cloud update(s) failed. Failed item(s) remain in History."
                             }
 
                         Toast.makeText(
