@@ -242,51 +242,31 @@ class BinActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Delete Selected Permanently")
             .setMessage(
-                "Permanently delete ${items.size} selected item(s) from local database and cloud?"
+                "Permanently delete \${items.size} selected item(s) from local database and cloud?"
             )
             .setPositiveButton("Delete Selected") { _, _ ->
 
                 lifecycleScope.launch(Dispatchers.IO) {
 
-                    // 1. Confirm cloud deletion FIRST.
-                    //    A local record is removed only after Supabase
-                    //    confirms that exactly one matching row was deleted.
-                    val successfulItems = mutableListOf<ScanItem>()
-                    val failedItems = mutableListOf<ScanItem>()
+                    // Delete the exact selected identities in cloud batches first.
+                    val successfulItems =
+                        SyncManager.hardDeleteScansFromCloud(items)
 
-                    items.forEach { item ->
-
-                        val result =
-                            SyncManager.hardDeleteScanFromCloud(
-                                item.deviceId,
-                                item.barcode,
-                                item.rackNo,
-                                item.date,
-                                item.time
-                            )
-
-                        if (result.success) {
-                            successfulItems.add(item)
-                        } else {
-                            failedItems.add(item)
-                        }
-                    }
-
-                    // 2. Delete locally ONLY for cloud-confirmed records.
                     if (successfulItems.isNotEmpty()) {
-                        db.scanDao().hardDeleteList(
+                        db.scanDao().hardDeleteListChunked(
                             successfulItems.map { it.id }
                         )
                     }
 
-                    // 3. Refresh UI and report the actual result.
-                    withContext(Dispatchers.Main) {
+                    val failedCount =
+                        items.size - successfulItems.size
 
+                    withContext(Dispatchers.Main) {
                         val message =
-                            if (failedItems.isEmpty()) {
-                                "${successfulItems.size} item(s) deleted permanently from app and cloud"
+                            if (failedCount == 0) {
+                                "\${successfulItems.size} item(s) deleted permanently from app and cloud"
                             } else {
-                                "${successfulItems.size} deleted, ${failedItems.size} failed cloud delete(s). Failed item(s) remain in Bin."
+                                "\${successfulItems.size} deleted, \${failedCount} failed cloud delete(s). Failed item(s) remain in Bin."
                             }
 
                         Toast.makeText(
@@ -306,6 +286,9 @@ class BinActivity : AppCompatActivity() {
             .show()
     }
 
+    // ============================================================
+    // RESTORE ALL
+    // ============================================================
     // ============================================================
     // RESTORE ALL
     // ============================================================
@@ -381,53 +364,26 @@ class BinActivity : AppCompatActivity() {
 
                 lifecycleScope.launch(Dispatchers.IO) {
 
-                    val itemsToProcess =
-                        deletedList.toList()
+                    val itemsToProcess = deletedList.toList()
 
-                    val ids =
-                        itemsToProcess.map {
-                            it.id
-                        }
+                    val successfulItems =
+                        SyncManager.hardDeleteScansFromCloud(itemsToProcess)
 
-                    // 1. Confirm cloud deletion FIRST.
-                    //    A local record is removed only after Supabase
-                    //    confirms that exactly one matching row was deleted.
-                    val successfulItems = mutableListOf<ScanItem>()
-                    val failedItems = mutableListOf<ScanItem>()
-
-                    itemsToProcess.forEach { item ->
-
-                        val result =
-                            SyncManager.hardDeleteScanFromCloud(
-                                item.deviceId,
-                                item.barcode,
-                                item.rackNo,
-                                item.date,
-                                item.time
-                            )
-
-                        if (result.success) {
-                            successfulItems.add(item)
-                        } else {
-                            failedItems.add(item)
-                        }
-                    }
-
-                    // 2. Delete locally ONLY for cloud-confirmed records.
                     if (successfulItems.isNotEmpty()) {
-                        db.scanDao().hardDeleteList(
+                        db.scanDao().hardDeleteListChunked(
                             successfulItems.map { it.id }
                         )
                     }
 
-                    // 3. Refresh UI and report the actual result.
-                    withContext(Dispatchers.Main) {
+                    val failedCount =
+                        itemsToProcess.size - successfulItems.size
 
+                    withContext(Dispatchers.Main) {
                         val message =
-                            if (failedItems.isEmpty()) {
-                                "Bin emptied permanently: ${successfulItems.size} item(s) deleted from app and cloud"
+                            if (failedCount == 0) {
+                                "Bin emptied permanently: \${successfulItems.size} item(s) deleted from app and cloud"
                             } else {
-                                "${successfulItems.size} deleted, ${failedItems.size} failed cloud delete(s). Failed item(s) remain in Bin."
+                                "\${successfulItems.size} deleted, \${failedCount} failed cloud delete(s). Failed item(s) remain in Bin."
                             }
 
                         Toast.makeText(
@@ -450,20 +406,4 @@ class BinActivity : AppCompatActivity() {
     // ============================================================
     // GO HOME
     // ============================================================
-
-    private fun goToHome() {
-
-        val intent =
-            Intent(
-                this,
-                MainActivity::class.java
-            )
-
-        intent.flags =
-            Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
-
-        startActivity(intent)
-        finish()
-    }
 }
