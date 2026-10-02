@@ -1,9 +1,11 @@
 package com.mahamart.mahamartaudit
 
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -83,6 +85,47 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
 
+        val currentDevice = getSharedPreferences("AuditPrefs", Context.MODE_PRIVATE)
+            .getString("DEVICE_ID", "DEV01")?.trim().orEmpty()
+
+        if (device != currentDevice) {
+            showDeviceIdPinDialog(store, device, rack)
+        } else {
+            persistSettings(store, device, rack)
+        }
+    }
+
+    private fun showDeviceIdPinDialog(store: String, device: String, rack: String) {
+        val pinInput = EditText(this).apply {
+            hint = "Enter PIN"
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setSingleLine(true)
+            setSelectAllOnFocus(true)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Authorize Device ID Change")
+            .setMessage("Enter the PIN to change the Device ID.")
+            .setView(pinInput)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Verify", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (pinInput.text.toString() == "1413") {
+                    dialog.dismiss()
+                    persistSettings(store, device, rack)
+                } else {
+                    pinInput.error = "Incorrect PIN"
+                    pinInput.setText("")
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun persistSettings(store: String, device: String, rack: String) {
         getSharedPreferences("AuditPrefs", Context.MODE_PRIVATE).edit().apply {
             putString("STORE_NAME", store)
             putString("DEVICE_ID", device)
@@ -133,7 +176,7 @@ class SettingsActivity : AppCompatActivity() {
 
                         while (reader.readLine().also { line = it } != null) {
                             processedLines++
-                            val tokens = line?.split(",", "\t", ";") ?: continue
+                            val tokens = line?.split(",", "\\t", ";") ?: continue
 
                             if (tokens.isNotEmpty()) {
                                 val rawBarcode = tokens[0].trim().replace("\"", "")
