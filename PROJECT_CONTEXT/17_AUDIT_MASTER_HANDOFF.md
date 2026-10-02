@@ -9,7 +9,7 @@ Branch:
 main
 
 Latest commit:
-4b1b4174a801a4f92326c4f4452ce2e2dcff2e3a
+aeccb036877838ed708d23088b02e4194bd3fede
 
 App:
 MahaMartAudit V5
@@ -21,15 +21,13 @@ Device:
 Zebra TC22
 
 ## Current status
-The latest source fixes a confirmed bug where manually entering a barcode did not trigger the item-name preview.
 
-The source is pushed to GitHub.
+The latest source includes the manual barcode lookup fix and a PIN gate for changing Device ID.
 
-The latest APK has NOT been built/verified in this environment.
-
-The team is waiting for deployment, so the next action is build + TC22 testing, not more redesign.
+The source changes are pushed to GitHub. The latest APK has NOT been built/verified in this environment. Build and test on the Zebra TC22 before deployment.
 
 ## Confirmed manual-entry bug
+
 Video:
 User-provided video, duration about 38.23 seconds.
 
@@ -45,11 +43,12 @@ Observed:
 Root cause:
 Barcode TextWatcher handled scanner programmatic input and CR/LF scanner cases but did not perform master_skus lookup for ordinary manual barcode input.
 
-## Latest fix
+## Manual barcode lookup fix
+
 Commit:
 4b1b4174a801a4f92326c4f4452ce2e2dcff2e3a
 
-Only MainActivity.kt changed for this latest fix.
+Only MainActivity.kt changed for this fix.
 
 Manual barcode input now:
 - clears preview while editing
@@ -61,7 +60,36 @@ Manual barcode input now:
 
 Scanner path remains guarded by isUpdatingBarcodeFromScan and explicitly calls lookupSkuName().
 
+## Device ID PIN protection
+
+Latest commits:
+- bc467872fb4cfe0e215043705820549b2a028903 — Require PIN to change device ID
+- aeccb036877838ed708d23088b02e4194bd3fede — Preserve tab delimiter in SKU import
+
+Behavior:
+- PIN 1413 is required when changing the saved Device ID.
+- If Device ID is unchanged, saving settings does not require the PIN.
+- Store name and rack changes do not require the PIN when Device ID is unchanged.
+- The PIN is hardcoded in the app and is a basic access check, not strong security.
+- APK build and TC22 verification are still pending.
+
+## Device ID change and existing scan data
+
+Confirmed from source review:
+- Saving a changed Device ID updates the AuditPrefs setting.
+- SettingsActivity does not clear Room scans or invoke a delete-all operation.
+- Existing scans retain their original deviceId; new scans use the newly configured ID.
+- History filters active scans to the currently configured Device ID. Therefore, after changing IDs, scans associated with the previous ID may disappear from the current History view, even though they remain stored.
+- Bin displays deleted records without the same current-device filter.
+
+Decision:
+- Do not clear, delete, or retroactively reassign existing scans when Device ID changes.
+- Defer the History visibility/filter improvement for a later task.
+- A future implementation should let staff access historical scans by Device ID without mixing or rewriting audit attribution.
+- No History filter changes have been made in this update.
+
 ## Core architecture
+
 Device -> Room -> Supabase PUSH ONLY.
 
 No Supabase -> Room scan import.
@@ -78,6 +106,7 @@ Cloud identity:
 device_id + barcode + rack_no + date + time
 
 ## History / Bin
+
 History:
 - current device only
 - newest -> oldest
@@ -95,6 +124,7 @@ Deletion:
 - Room local delete chunks of 500
 
 ## Important source implementation
+
 ScanItem fields:
 id, barcode, quantity, rackNo, date, time, deviceId, isSynced, isDeleted.
 
@@ -110,6 +140,7 @@ lookupSkuName():
 db.scanDao().getMasterSkuByBarcode(cleanBarcode)
 
 ## Recent commit history
+
 d076382355bd430e133e9c90f7f0d25c99f82393 — SyncManager batched cloud deletion
 d49eca88d3a8b86099c050aa4458c668e4390f76 — Room chunked delete helpers
 36d40400bb9831f06f4eea7e4b87a708997b35fe — History batch-delete integration
@@ -119,13 +150,11 @@ d1e464dbf8525b8048e104a3f6a45001b4d8ad0ad — History cleanup
 90853e195176772e682fd53fe2eeae3608ea9c00 — SyncManager compile fix
 b778caea8d47efabeb635d72d8b868e9cff02817 — SKU preview lifecycle/focus recovery
 4b1b4174a801a4f92326c4f4452ce2e2dcff2e3a — manual barcode lookup fix
-
-## Existing project context docs
-- 09_SCANNER_FIX_APPLIED.md
-- 10_NO_SCAN_HISTORY_IMPORT_PREVIEW.md
-- 11_FINAL_SCANNER_PATH_FIX.md
+bc467872fb4cfe0e215043705820549b2a028903 — PIN gate for Device ID change
+aeccb036877838ed708d23088b02e4194bd3fede — preserve tab delimiter in SKU import
 
 ## Rules for the next conversation
+
 1. Read this file and the other PROJECT_CONTEXT docs before modifying source.
 2. Do not assume an APK was built.
 3. Do not redesign UI unless requested.
@@ -136,10 +165,15 @@ b778caea8d47efabeb635d72d8b868e9cff02817 — SKU preview lifecycle/focus recover
 8. Make focused commits so rollback is easy.
 9. Test on TC22 before declaring deployment-ready.
 10. If a requested change can affect stable behavior, explain the affected areas before applying it.
+11. Never clear, delete, or reassign old scan records just because Device ID changes.
+12. Keep the deferred History-by-Device-ID visibility change out of scope until requested.
 
 ## Immediate next step
-Build the latest main commit and test:
+
+Switch to main, pull the latest commit, build, and test on the Zebra TC22:
 A. scanner
-B. search
-C. manual barcode
+B. SKU search
+C. manual barcode lookup
+D. change Device ID and confirm existing scans remain in Room
+E. verify current History filter behavior and Bin
 Then test deletion/history/bin behavior before full-scale deployment.
