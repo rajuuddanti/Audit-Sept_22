@@ -176,7 +176,7 @@ class SettingsActivity : AppCompatActivity() {
 
                         while (reader.readLine().also { line = it } != null) {
                             processedLines++
-                            val tokens = line?.split(",", "\\t", ";") ?: continue
+                            val tokens = line?.split(",", "\t", ";") ?: continue
 
                             if (tokens.isNotEmpty()) {
                                 val rawBarcode = tokens[0].trim().replace("\"", "")
